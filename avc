@@ -50,8 +50,7 @@ git_remove()
 {
     local workspace_dir="$1"
     shift
-    set -x
-    run_in "$workspace_dir" git rm "$*" 
+    run_in "$workspace_dir" git rm "$@" 
 }
 #
 # mtn
@@ -330,10 +329,12 @@ dispatch_files()
     for workspace_dir in ./.env/tools/repos/SS_FVNFP ; do
     #for workspace_dir in `all_workspaces` ; do
         local workspace_dir_abs=`abspath $workspace_dir`
+        #local workspace_dir_abs_len=`echo -n "$workspace_dir_abs//" | wc -c`
         local workspace_paths=""
         for path in $* ; do
             local path_abs=`abspath $path`
             if echo "$path_abs" | egrep -q "^$workspace_dir_abs" ; then
+                #local path_rel=$(echo $path_abs | cut -c${workspace_dir_abs_len}-)
                 workspace_paths="$workspace_paths $path_abs"
             fi
         done
