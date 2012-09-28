@@ -1,0 +1,420 @@
+#!/usr/bin/env bash
+#
+# avc - aggregated vcs
+#
+# 
+
+#
+# 
+#
+
+#
+# git
+#
+git_search_worskpaces()
+{
+    find . -name ".git" | xargs --no-run-if-empty --max-args=1 dirname
+}
+
+git_unknown_files() 
+{
+    run_in $1 git status --porcelain | egrep '^\?\?' | wc -l
+}
+
+git_modified_elements() 
+{
+    run_in $1 git status --porcelain | egrep -v '^\?\?' | wc -l
+}
+
+git_content_tag()
+{
+    local branch=`run_in $1 git branch`
+    if echo "$branch" | grep -qF "(no branch)" ; then
+        run_in "$1" git describe 2>/dev/null
+    else
+        echo "$branch" | awk '/\*/ {print $2;}'
+    fi
+}
+
+git_status()
+{
+    run_in "$1" git status -s --untracked-files=no | awk -v root=$1 '{printf("%s %s/%s\n", $1, root, $2)}'
+}
+
+git_workspace_diff()
+{
+    run_in "$1" git diff --src-prefix=$1/ --dst-prefix=$1/  
+}
+
+git_remove()
+{
+    local workspace_dir="$1"
+    shift
+    set -x
+    run_in "$workspace_dir" git rm "$*" 
+}
+#
+# mtn
+#
+
+mtn_search_workspaces()
+{
+    find . -name "_MTN" | xargs --no-run-if-empty  --max-args=1 dirname
+}
+
+mtn_unknown_files()
+{
+    run_in $1 mtn ls unknown | wc -l
+}
+
+mtn_modified_elements()
+{
+    run_in $1 mtn st | egrep "^ +(dropped|added|patched|renamed) " | wc -l
+}
+
+mtn_content_tag()
+{
+    run_in $1 cat _MTN/options | tr -d '"' | awk '/branch/ {print $2; }'
+}
+
+is_this_mtn()
+{
+    if [ -d _MTN ] ; then
+        return 0
+    else
+        return 1
+    fi
+}
+
+#
+# subversion
+#
+
+svn_find_workspaces()
+{
+    find . -name ".svn" | while read dot_svn_dir 
+    do
+        workspace_dir=`dirname $dot_svn_dir`
+        if [ ! -d "$workspace_dir/../.svn" ] ; then
+            echo "$DIR"
+        fi
+    done
+}
+
+svn_unknown_files() 
+{
+    run_in $1 svn status | egrep '^\?' | wc -l
+}
+
+svn_modified_elements() 
+{
+    run_in $1 svn status | egrep -v '^\?' | wc -l
+}
+
+svn_content_tag()
+{
+    # ok this is fucked up beyond all recognition!
+    # 
+    if run_in $1 svn info > /dev/null 2>&1 ; then
+        local url=`run_in $1 svn info | awk '/^URL/ {printf $2; }'`
+        local repo=`run_in $1 svn info | awk '/^Repository Root/ {printf $3; }'`
+        local rev=`run_in $1 svn info | awk '/^Revision/ {printf $2; }'`
+        
+        local tag=`echo $url | sed -e "s#$repo##"`
+        echo "$tag@$rev"
+    else
+        echo "unknown"
+    fi
+}
+
+#
+# common
+#
+
+run_in()
+{
+    local f=$1
+    shift
+    ( 
+        cd $f 
+        "$@"
+        exit $? 
+    ) 
+    return $?
+}
+
+potentially_replace()
+{
+    local file_to_save="$1"
+    if [ -f "$file_to_save" ]
+    then
+        echo "$PNAME: file '$file_to_save' already exists. replacing "         
+    fi
+    
+    cat > "$file_to_save"    
+}
+
+#
+# avc beef
+#
+
+autoinit()
+{
+    (
+        git_search_worskpaces
+        mtn_search_workspaces
+        svn_find_workspaces        
+    ) | potentially_replace avc.conf
+        
+    echo "found workspaces: "
+    cat avc.conf            
+}
+#
+# avc SCM multiplex
+#
+
+workspace_type()
+{
+    local workspace_dir="$1"
+    if [ -d "$workspace_dir/_MTN" ] ; then 
+        echo "mtn"
+    elif [ -d "$workspace_dir/.svn" ] ; then
+        echo "svn"
+    elif [ -d "$workspace_dir/.git" ] ; then
+        echo "git"
+    fi
+}
+
+available()
+{
+    if type $1 >/dev/null 2>&1 ; then
+        return 0
+    else
+        return 1
+    fi
+}
+
+
+trampoline()
+{
+    local method=$1
+    shift    
+    local type=`workspace_type $1`    
+    if [ -n "$type" ] ; then
+        if ! available $type ; then
+            echo "n/a"
+        else
+            ${type}_${method} "$@"
+        fi
+    else
+        echo "$PNAME: unable to execute '$method' on folder '$1"
+        exit 1
+    fi
+}
+
+remove()
+{
+    trampoline remove "$@"
+}
+status()
+{
+    trampoline status "$@"
+}
+
+workspace_diff()
+{
+    trampoline workspace_diff "$@"
+}
+
+# trampoline methods
+modified_elements()
+{
+    trampoline modified_elements "$@"
+}
+
+content_tag()
+{
+    trampoline content_tag "$@"
+}
+
+unknown_files()
+{
+    trampoline unknown_files "$@"
+}
+
+# generic methods
+directory_size()
+{
+    echo 0
+    #du -sh $1 | awk '{print $1;}'
+}
+
+latest_modified_file()
+{
+    find $1 | xargs -d '\n' ls -ld --time-style=+%s | sort -nk6 | tail -n1 |awk '{print $7;}'
+}
+
+abspath()
+{
+    if test -z "$1" 
+    then
+        return
+    fi
+    #set -x
+    local dir=`dirname $1`
+    local name=`basename $1`
+    # really, i don't get this logic
+    # don't trust this :/
+    if test "$name" == ".."
+    then
+        abspath "$(cd $dir/.. ; pwd)"
+    elif test "$dir" = "."
+    then
+        echo "$(pwd)/$name"
+    elif test "$dir" = "/"
+    then
+        echo "/$name"
+    else
+        dir_abspath=$(abspath $dir)
+        echo "$dir_abspath/$name"
+    fi
+}
+
+find_avc_root()
+{
+    local potential_avc_root=`pwd`
+    while [ "$potential_avc_root" != "/" ]
+    do
+        if [ -f "$potential_avc_root/avc.conf" ]
+        then
+            echo "$potential_avc_root"
+            return 0
+        fi
+        potential_avc_root=`readlink -f $potential_avc_root/..`      
+    done
+    return 1
+}
+
+find_avc_root_assert()
+{
+    if ! find_avc_root
+    then
+        echo "$PNAME: unable to find 'avc.conf' up in directory structure"
+        exit 1
+    fi    
+}
+
+   
+all_workspaces()
+{
+    avc_root=`find_avc_root_assert`
+    
+    cat "$avc_root/avc.conf"
+}
+
+for_all_workspace()
+{
+    for workspace_dir in `all_workspaces`
+    do
+        "$@" $workspace_dir
+    done
+}
+
+dispatch_files()
+{
+    #set -x
+    
+    local subaction="$1"
+    
+    shift    
+    for workspace_dir in ./.env/tools/repos/SS_FVNFP ; do
+    #for workspace_dir in `all_workspaces` ; do
+        local workspace_dir_abs=`abspath $workspace_dir`
+        local workspace_paths=""
+        for path in $* ; do
+            local path_abs=`abspath $path`
+            if echo "$path_abs" | egrep -q "^$workspace_dir_abs" ; then
+                workspace_paths="$workspace_paths $path_abs"
+            fi
+        done
+        echo "$PNAME: $workspace_dir -> $workspace_paths"
+        if [ -n "$workspace_paths" ] ; then
+            trampoline $subaction $workspace_dir_abs $workspace_paths
+        fi
+    done    
+}
+
+readonly overall_status_FORMAT="%- 40s %3s %-30s %12s %12s %4s %4s"
+readonly overall_staus_DATE_FORMAT="%F"
+
+overall_status_line()
+{
+    type=`workspace_type $1` 
+    if [ -n "$type" ]
+    then 
+        size=`directory_size $1`
+        scm_unknown=`unknown_files $1`
+        scm_modified=`modified_elements $1`
+        scm_content_tag=`content_tag $1`
+        latest_modified=`latest_modified_file $1`
+        
+        age=`date -r $latest_modified +$overall_staus_DATE_FORMAT`
+        printf "$overall_status_FORMAT\n" "$1" "$type" "$scm_content_tag" "$size" "$age" "$scm_modified" "$scm_unknown"
+    fi
+}
+
+overall_status()
+{
+    printf "$overall_status_FORMAT\n" directory scm branch/tag size age mod unkn
+    echo  "---------------------------------------------------------------------------------------------------------------"
+    
+    for workspace_dir in $*
+    do
+        overall_status_line $workspace_dir
+    done
+}
+
+
+usage()
+{
+    echo "usage: $PNAME action ...args"
+    echo "agreegated vcs actions:"
+    echo ""
+    echo "   status - status in each dir"
+    echo "   overall_status - show summary information (path, type, branch, size, modified & unknown files) "
+    echo "avc management:"
+    echo "   autoinit - create initial configuration by digging current"
+    echo "            folder"
+}
+PNAME=`basename $0`
+
+#set -x
+
+action="$1"
+shift
+
+case "$action" in
+    abspath)
+        abspath "$*"
+        ;;
+    rm|remove)
+        dispatch_files remove "$*"
+        ;;
+    autoinit)
+        autoinit
+        ;;
+    status)
+        for_all_workspace status
+        ;;
+    overall_status)
+        overall_status `all_workspaces`
+        ;;
+    diff)
+        #set -x
+        for_all_workspace workspace_diff
+        ;;
+    *)
+        usage
+        exit 1
+        ;;        
+esac

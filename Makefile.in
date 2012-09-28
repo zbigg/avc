@@ -1,0 +1,43 @@
+#
+# makefoo Makefile
+# 
+# supported targets:
+#   install     -- install to previously configured prefix
+#   check       -- run the testsuite
+#
+
+srcdir=@srcdir@
+top_srcdir=@top_srcdir@
+top_builddir=@top_builddir@
+
+prefix=@prefix@
+exec_prefix=@exec_prefix@
+libdir = @libdir@
+datadir = @datadir@
+
+MAKEFOO=@MAKEFOO@
+INSTALL = @INSTALL@
+INSTALL_DATA = @INSTALL_DATA@
+INSTALL_DIR = mkdir -p
+
+avc_DIR=.
+avc_SCRIPTS = avc
+avc_INSTALL_DEST=$(bindir)
+
+COMPONENTS += avc
+PUBLIC_COMPONENTS += avc
+
+PRODUCT=avc
+VERSION=0.0.1-dev
+
+AUTOCONF_AUX_DIR=autoconf_helpers
+
+MAKEFOO_USE += install-fhs
+MAKEFOO_USE += autoconf
+MAKEFOO_USE += rpm
+MAKEFOO_USE += src-dist
+
+include $(MAKEFOO)
+
+# jedit: :tabSize=8:mode=makefile:
+
