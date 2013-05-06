@@ -5,8 +5,25 @@
 # 
 
 #
-# 
+# avc specfile example
 #
+##
+# custom development env setup
+#
+#
+# cboom	 ref	branches/goo
+# kuwaka ref	trunk
+# boost  ref     boost-1.4.6
+# 
+# boost	url	git+ssh://git@git.foo.org/boost
+# cboom	url	svn+https://svn.foo.org/svn/repo/cboom
+#       
+# will checkout
+#  cboom  -> svn+https://svn.foo.org/svn/repo/cboom/branches/foo
+#  kuwaka -> svn+https://svn.foo.org/svn/repo/kuwaka/trunk
+#  boost  -> git+ssh://git@git.foo.org/boost && checkout boost-1.4.6
+#
+
 
 #DRY_RUN=1
 #QUIET=1
@@ -14,6 +31,20 @@
 #
 # git
 #
+
+git_checkout()
+{
+    local target_folder="$1"
+    local clone_url="$2"
+    local ref="$3"
+    if [ ! -d "$target_folder" ] ; then
+        run_in .                git clone "$clone_url" "$target_folder"
+    else
+        run_in $target_folder   git fetch
+    fi
+    run_in "$target_folder" git checkout $ref
+        
+}
 git_search_worskpaces()
 {
     find . -name ".git" | xargs --no-run-if-empty --max-args=1 dirname
@@ -44,7 +75,7 @@ git_status()
     local workspace_dir="$1"
     shift
     
-    run_in "$workspace_dir" git status -s --untracked-files=no "$@" | awk -v root=$workspace_dir '{printf("%s %s/%s\n", $1, root, $2)}'
+    run_in "$workspace_dir" git status -s  "$@" | awk -v root=$workspace_dir '{printf("%s %s/%s\n", $1, root, $2)}'
 }
 
 git_workspace_diff()
@@ -242,6 +273,21 @@ trampoline()
     fi
 }
 
+checkout_url()
+{
+    local target_folder="$1"
+    local url="$2"
+    local ref="$3"
+    
+    if   [[ "$url = git*" ]] ; then
+        git_checkout "$target_folder" "$url" "$ref"
+    elif [[ "$url = svn*" ]] ; then
+        svn_checkout "$target_folder" "$url" "$ref"
+    else
+        echo "avc: unable to checkout "$ref" of "$url"; unknown URL scheme"
+        return 1
+    fi        
+}
 remove()
 {
     trampoline remove "$@"
@@ -435,6 +481,60 @@ overall_status()
     done
 }
 
+chunks_all()
+{
+    local specfile="$1"
+    awk '
+        /^#/ {
+                next;
+        }
+        // {
+                print $1;
+        }
+        ' $specfile | sort -u
+}
+
+chunk_prop()
+{
+    local specfile="$1"
+    local chunk="$2"
+    local prop="$3"
+    awk '
+        /^#/ {
+                next;
+        }
+        /^'${chunk}'[ \t]+'${prop}'[ \t]+/ { 
+                print $3;
+                found=1;
+                exit 0;
+        }
+        END {
+                if( !found)
+                exit 1
+        }
+    ' $specfile
+    r=$?
+    return $r    
+}
+
+checkout()
+{
+    #set -x
+    local specfile="$1"
+    local target_folder="$2"
+    mkdir -p $target_folder    
+    for chunk in `chunks_all $specfile` ; do
+        local chunk_url=`chunk_prop $specfile $chunk url`
+        local chunk_ref=`chunk_prop $specfile $chunk ref`
+        echo "$chunk $chunk_url $chunk_ref"
+        
+        if [ ! -d "$target_folder/$chunk" ] ; then
+            checkout_url "$target_folder/$chunk" $chunk_url $chunk_ref
+        fi
+    done
+}
+
+
 
 usage()
 {
@@ -448,6 +548,9 @@ usage()
     echo "   overall_status    - show summary information (path, type, branch, size, modified & unknown files)"
     echo ""
     echo "avc management:"
+    echo "   checkout SPECFILE FOLDER"
+    echo "                     - creates checkout described by SPECFILE to"
+    echo "                       specified FOLDER"
     echo "   autoinit - create initial configuration by digging current"
     echo "              folder"
     echo "options:"
@@ -505,7 +608,14 @@ case "$action" in
     abspath)
         abspath "$*"
         ;;
+    checkout)
         
+        if [ -z "$paths" ] ; then
+            echo "avc: checkout requires specfile and folder" >&2
+            exit 1
+        fi
+        checkout $paths
+        ;;
     rm|remove)
         if [ -z "$@" ] ; then
             echo "avc: rm requires paths" >&2
