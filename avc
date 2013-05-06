@@ -8,6 +8,9 @@
 # 
 #
 
+#DRY_RUN=1
+#QUIET=1
+
 #
 # git
 #
@@ -38,19 +41,37 @@ git_content_tag()
 
 git_status()
 {
-    run_in "$1" git status -s --untracked-files=no | awk -v root=$1 '{printf("%s %s/%s\n", $1, root, $2)}'
+    local workspace_dir="$1"
+    shift
+    
+    run_in "$workspace_dir" git status -s --untracked-files=no "$@" | awk -v root=$workspace_dir '{printf("%s %s/%s\n", $1, root, $2)}'
 }
 
 git_workspace_diff()
 {
-    run_in "$1" git diff --src-prefix=$1/ --dst-prefix=$1/  
+    local workspace_dir="$1"
+    shift
+    
+    run_in "$workspace_dir" git diff --src-prefix=$workspace_dir/ --dst-prefix=$workspace_dir/ "$@" | cat  
 }
 
 git_remove()
 {
     local workspace_dir="$1"
     shift
+    
     run_in "$workspace_dir" git rm "$@" 
+}
+
+git_commit()
+{
+    local workspace_dir="$1"
+    shift
+    local git_commit_options=""
+    if [ -n "$commit_message" ] ; then
+        git_commit_options="-m \"$commit_message\""
+    fi
+    run_in "$workspace_dir" git commit $git_commit_options "$@"
 }
 #
 # mtn
@@ -135,7 +156,13 @@ run_in()
     local f=$1
     shift
     ( 
-        cd $f 
+        if [ -z "$QUIET" ] ; then
+            echo "avc: "$@" (in $f)" >&2
+        fi
+        cd $f
+        if [ -n "$DRY_RUN" ] ; then
+            exit 0
+        fi
         "$@"
         exit $? 
     ) 
@@ -193,7 +220,11 @@ available()
     fi
 }
 
-
+# trampoline METHOD WORKSPACE ...
+#
+#  checks type of WORKSPACE and then executes
+#  type_METHOD WORKSPACE ...
+#
 trampoline()
 {
     local method=$1
@@ -214,6 +245,11 @@ trampoline()
 remove()
 {
     trampoline remove "$@"
+}
+
+commit()
+{
+    trampoline commit "$@"
 }
 status()
 {
@@ -255,28 +291,18 @@ latest_modified_file()
 
 abspath()
 {
+    
     if test -z "$1" 
     then
         return
     fi
-    #set -x
+    
     local dir=`dirname $1`
     local name=`basename $1`
-    # really, i don't get this logic
-    # don't trust this :/
-    if test "$name" == ".."
-    then
-        abspath "$(cd $dir/.. ; pwd)"
-    elif test "$dir" = "."
-    then
-        echo "$(pwd)/$name"
-    elif test "$dir" = "/"
-    then
-        echo "/$name"
-    else
-        dir_abspath=$(abspath $dir)
-        echo "$dir_abspath/$name"
-    fi
+    (
+        cd $dir ; 
+        echo "`pwd`/$name"
+    )
 }
 
 find_avc_root()
@@ -311,6 +337,13 @@ all_workspaces()
     cat "$avc_root/avc.conf"
 }
 
+all_workspaces_abs()
+{
+    for workspace in `all_workspaces` ; do
+        abspath $workspace
+    done
+}
+
 for_all_workspace()
 {
     for workspace_dir in `all_workspaces`
@@ -319,30 +352,57 @@ for_all_workspace()
     done
 }
 
-dispatch_files()
-{
-    #set -x
-    
-    local subaction="$1"
-    
-    shift    
-    for workspace_dir in ./.env/tools/repos/SS_FVNFP ; do
-    #for workspace_dir in `all_workspaces` ; do
-        local workspace_dir_abs=`abspath $workspace_dir`
-        #local workspace_dir_abs_len=`echo -n "$workspace_dir_abs//" | wc -c`
-        local workspace_paths=""
-        for path in $* ; do
-            local path_abs=`abspath $path`
+match_paths()
+(
+    local all_workspaces_abs="$(all_workspaces_abs)"
+    for path in "$@" ; do
+        local path_abs="$(abspath $path)"
+        
+        for workspace_dir_abs in $all_workspaces_abs ; do
             if echo "$path_abs" | egrep -q "^$workspace_dir_abs" ; then
-                #local path_rel=$(echo $path_abs | cut -c${workspace_dir_abs_len}-)
-                workspace_paths="$workspace_paths $path_abs"
+                echo "$workspace_dir_abs $path_abs"
             fi
         done
-        echo "$PNAME: $workspace_dir -> $workspace_paths"
-        if [ -n "$workspace_paths" ] ; then
-            trampoline $subaction $workspace_dir_abs $workspace_paths
+    done
+)
+
+match_paths_oneline()
+{
+    match_paths "$@" | (
+        local last_workspace=""
+        local paths=""
+        while read workspace path ; do
+            if [ "$workspace" = "$last_workspace" ] ; then
+                paths="$paths $path"
+            else
+                if [ -n "$paths" ] ; then
+                    echo "$last_workspace $paths"
+                fi
+                paths="$path"
+            fi
+            last_workspace="$workspace"
+        done
+        if [ -n "$paths" ] ; then
+            echo "$last_workspace $paths"
         fi
-    done    
+    )
+}
+
+dispatch_to_workspaces()
+{
+    
+    local subaction="$1"    
+    shift
+    
+    if [ -z "$1" ] ; then
+        for_all_workspace $subaction
+        return
+    fi
+    
+    match_paths_oneline "$@" | while read workspace paths 
+    do
+        trampoline $subaction $workspace $paths
+    done 
 }
 
 readonly overall_status_FORMAT="%- 40s %3s %-30s %12s %12s %4s %4s"
@@ -378,44 +438,108 @@ overall_status()
 
 usage()
 {
-    echo "usage: $PNAME action ...args"
-    echo "agreegated vcs actions:"
+    echo "usage: $PNAME <action> PATHS"
+    echo "agreegated vcs ACTIONs:"
     echo ""
-    echo "   status - status in each dir"
-    echo "   overall_status - show summary information (path, type, branch, size, modified & unknown files) "
+    echo "   st/status         - status in each dir"
+    echo "   di/diff           - diff on"
+    echo "   rm/remove         - remove files"
+    echo "   ci/commit/checkin - commit files"
+    echo "   overall_status    - show summary information (path, type, branch, size, modified & unknown files)"
+    echo ""
     echo "avc management:"
     echo "   autoinit - create initial configuration by digging current"
-    echo "            folder"
+    echo "              folder"
+    echo "options:"
+    echo "  -n | --dry-run     - just print commands, don't execute anything"
+    echo "  -h | --help | help - print this help message"
+    echo "  -m MSG | --message MSG" 
+    echo "                     - commit message (for commit action)"
 }
 PNAME=`basename $0`
 
 #set -x
 
-action="$1"
-shift
+while [ -n "$1" ] ; do
+    if   [ "$1" = "-h" -o "$1" = "--help" ]; then
+        usage
+        exit 0
+    elif [ "$1" = "-n" -o "$1" = "--dry-run" ] ; then
+        DRY_RUN=1
+        shift
+    elif [ "$1" = "-q" -o "$1" = "--quiet" ] ; then
+        QUIET=1
+        shift
+    elif [ "$1" = "-m" -o "$1" = "--message" ] ; then
+        if [ -z "$2" ] ; then
+            echo "avc: value needed for -m/--message" >&2
+            exit 1
+        fi
+        commit_message="$2"
+        shift
+        shift
+    elif [ "$1" = '--' ] ; then
+        shift
+        paths="$@"
+        break
+    else
+        if [ -z "$action" ] ; then
+            action="$1"
+            shift
+        else
+            paths="$paths $1"
+            shift
+        fi
+    fi
+done
+
+if [ -z "$action" ] ; then
+    echo "avc: action not specified" >&2
+    exit 1
+fi
 
 case "$action" in
+    help)
+        usage
+        ;;
     abspath)
         abspath "$*"
         ;;
+        
     rm|remove)
-        dispatch_files remove "$*"
+        if [ -z "$@" ] ; then
+            echo "avc: rm requires paths" >&2
+            exit 1
+        fi
+        dispatch_to_workspaces remove $paths
         ;;
+        
+    ci|commit|checkin)
+        dispatch_to_workspaces commit $paths
+        ;;
+
+    diff|di)
+        dispatch_to_workspaces workspace_diff $paths
+        ;;
+        
+    status)
+        dispatch_to_workspaces status $paths
+        ;;
+        
     autoinit)
         autoinit
         ;;
-    status)
-        for_all_workspace status
-        ;;
+        
     overall_status)
         overall_status `all_workspaces`
         ;;
-    diff)
-        #set -x
-        for_all_workspace workspace_diff
-        ;;
+        
     *)
+        echo "avc: invalid action '$action'" >&2
         usage
         exit 1
         ;;        
 esac
+
+# jedit: :indent=4:tabSize=8:mode=shellscript:
+
