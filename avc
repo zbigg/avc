@@ -108,6 +108,24 @@ git_commit()
 # mtn
 #
 
+mtn_checkout()
+{
+    local target_folder="$1"
+    local db_name="$(dirname $target_folder)/.$(basename $target_folder).mtn"
+    local clone_url="$2"
+    local ref="$3"
+    
+    if [ ! -f "$db_name" ] ; then
+        run_in . mtn db init -d "$db_name"
+    fi
+    run_in . mtn pull -d "$db_name" "$clone_url"
+    
+    if [ ! -d "$target_folder" ] ; then
+        run_in . mtn -d "$db_name" checkout --revision="$ref" "$target_folder"
+    else
+        run_in "$target_folder" mtn update --revision=$ref
+    fi
+}
 mtn_search_workspaces()
 {
     find . -name "_MTN" | xargs --no-run-if-empty  --max-args=1 dirname
@@ -279,10 +297,12 @@ checkout_url()
     local url="$2"
     local ref="$3"
     
-    if   [[ "$url = git*" ]] ; then
+    if   [[ "$url" = git* ]] ; then
         git_checkout "$target_folder" "$url" "$ref"
-    elif [[ "$url = svn*" ]] ; then
+    elif [[ "$url" = svn* ]] ; then
         svn_checkout "$target_folder" "$url" "$ref"
+    elif [[ "$url" = mtn* ]] ; then
+        mtn_checkout "$target_folder" "$url" "$ref"
     else
         echo "avc: unable to checkout "$ref" of "$url"; unknown URL scheme"
         return 1
@@ -532,6 +552,7 @@ checkout()
             checkout_url "$target_folder/$chunk" $chunk_url $chunk_ref
         fi
     done
+    cp "$specfile" "$target_folder/.avc.specfile.txt"
 }
 
 
