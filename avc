@@ -381,6 +381,11 @@ find_avc_root()
             echo "$potential_avc_root"
             return 0
         fi
+        if [ -f "$potential_avc_root/.avc.specfile.txt" ]
+        then
+            echo "$potential_avc_root"
+            return 0
+        fi
         potential_avc_root=`readlink -f $potential_avc_root/..`      
     done
     return 1
@@ -400,7 +405,11 @@ all_workspaces()
 {
     avc_root=`find_avc_root_assert`
     
-    cat "$avc_root/avc.conf"
+    if [ -f "$avc_root/.avc.specfile.txt" ] ; then
+        chunks_all $avc_root/.avc.specfile.txt
+    else
+        cat "$avc_root/avc.conf"
+    fi
 }
 
 all_workspaces_abs()
@@ -534,7 +543,7 @@ chunk_prop()
         }
     ' $specfile
     r=$?
-    return $r    
+    return $r
 }
 
 checkout()
