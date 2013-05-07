@@ -45,6 +45,11 @@ git_checkout()
     run_in "$target_folder" git checkout $ref
 }
 
+git_is_branch()
+{
+    git branch -a | grep -q "remotes/$1"
+}
+
 git_update()
 {
     local target_folder="$1"
@@ -57,6 +62,12 @@ git_update()
             run_in $target_folder   git fetch
         fi
     fi
+    if run_in "$target_folder" git_is_branch origin/$ref ; then 
+        if ! run_in "$target_folder" git merge --ff origin/$ref ; then
+            echo "avc: $target_folder, unable to update/fast-forward from origin/$ref -> $ref; please merge or rebase manually"
+            return 1
+        fi
+    fi        
     run_in "$target_folder" git checkout $ref
 }
 
@@ -539,10 +550,16 @@ overall_status_line()
 
 overall_status()
 {
+    local chunks="$*"
+    if [ -z "$chunks" ] ; then
+        chunks="`chunks_all $specfile`" 
+    fi
+    
+    QUIET=1
     printf "$overall_status_FORMAT\n" directory scm branch/tag size age mod unkn
     echo  "---------------------------------------------------------------------------------------------------------------"
     
-    for workspace_dir in $*
+    for workspace_dir in $chunks
     do
         overall_status_line $workspace_dir
     done
@@ -759,7 +776,7 @@ case "$action" in
         ;;
         
     overall_status)
-        overall_status `all_workspaces`
+        overall_status $paths
         ;;
         
     *)
