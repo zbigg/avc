@@ -511,6 +511,8 @@ overall_status()
 }
 
 chunks_all()
+        # chunks_all FILE
+        #   get names of all objects
 {
     local specfile="$1"
     awk '
@@ -524,6 +526,9 @@ chunks_all()
 }
 
 chunk_prop()
+        # chunk_prop FILE CHUNK PROP_NAME
+        #   get value of PROP_NAME of CHUNK from
+        #   FILE
 {
     local specfile="$1"
     local chunk="$2"
@@ -551,11 +556,18 @@ checkout()
     #set -x
     local specfile="$1"
     local target_folder="$2"
+    shift
+    shift
+    
+    local chunks="$*"
+    if [ -z "$chunks" ] ; then
+        chunks="`chunks_all $specfile`" 
+    fi
     mkdir -p $target_folder    
-    for chunk in `chunks_all $specfile` ; do
+    for chunk in $chunks ; do
         local chunk_url=`chunk_prop $specfile $chunk url`
         local chunk_ref=`chunk_prop $specfile $chunk ref`
-        echo "$chunk $chunk_url $chunk_ref"
+        echo -e "$chunk\t$chunk_ref\t($chunk_url)"
         
         if [ ! -d "$target_folder/$chunk" ] ; then
             checkout_url "$target_folder/$chunk" $chunk_url $chunk_ref
