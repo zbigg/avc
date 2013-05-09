@@ -73,7 +73,7 @@ git_update()
             run_in $target_folder git fetch
         fi
     fi
-    if run_in "$target_folder" git_is_branch origin/$ref ; then 
+    if QUIET=1 run_in "$target_folder" git_is_branch origin/$ref ; then 
         if ! run_in "$target_folder" git merge --ff origin/$ref ; then
             echo "avc: $target_folder, unable to update/fast-forward from origin/$ref -> $ref; please merge or rebase manually"
             return 1
@@ -250,7 +250,7 @@ run_in()
         if [ -n "$DRY_RUN" ] ; then
             exit 0
         fi
-        "$@"
+        eval "$@"
         exit $? 
     ) 
     return $?
@@ -296,7 +296,7 @@ workspace_type()
         echo "mtn"
     elif [ -d "$workspace_dir/.svn" ] ; then
         echo "svn"
-    elif [ -d "$workspace_dir/.git" ] ; then
+    elif [ -e "$workspace_dir/.git" ] ; then
         echo "git"
     fi
 }
@@ -796,7 +796,7 @@ case "$action" in
         autoinit
         ;;
     each)
-        QUIET=1
+        #QUIET=1
         for_each_chunk "$@"
         ;;
     overall_status)
