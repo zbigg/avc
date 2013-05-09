@@ -27,8 +27,8 @@ avc_INSTALL_DEST=$(bindir)
 COMPONENTS += avc
 PUBLIC_COMPONENTS += avc
 
-PRODUCT=avc
-VERSION=0.0.1-dev
+PACKAGES=avc
+VERSION=0.0.1
 
 AUTOCONF_AUX_DIR=autoconf_helpers
 

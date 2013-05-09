@@ -29,6 +29,17 @@
 #QUIET=1
 
 #
+# common utils
+#
+
+run_with_prefix()
+{
+    local prefix="$1"
+    shift
+    "$@" 2>&1 | awk -v prefix="$prefix" '{ printf("%s%s\n",prefix,$0);}'
+}
+
+#
 # git
 #
 
@@ -55,11 +66,11 @@ git_update()
     local target_folder="$1"
     local clone_url="$2"
     local ref="$3"
-    if [ -n "$enable_fetch_while_update" ] ; then
-        if [ ! -d "$target_folder" ] ; then
-            run_in .                git clone "$clone_url" "$target_folder"
-        else
-            run_in $target_folder   git fetch
+    if [ ! -d "$target_folder" ] ; then
+        run_in . git clone "$clone_url" "$target_folder"
+    else
+        if [ -n "$enable_fetch_while_update" ] ; then
+            run_in $target_folder git fetch
         fi
     fi
     if run_in "$target_folder" git_is_branch origin/$ref ; then 
@@ -469,6 +480,7 @@ all_workspaces_abs()
 }
 
 for_all_workspace()
+        # this is some shit, to be removed
 {
     for workspace_dir in `all_workspaces`
     do
@@ -622,7 +634,7 @@ checkout()
     for chunk in $chunks ; do
         local chunk_url=`chunk_prop $specfile $chunk url`
         local chunk_ref=`chunk_prop $specfile $chunk ref`
-        echo -e "$chunk\t$chunk_ref\t($chunk_url)"
+        echo -e "avc: checking out: $chunk\t$chunk_ref\t($chunk_url)" >&2
         
         if [ ! -d "$target_folder/$chunk" ] ; then
             checkout_url "$target_folder/$chunk" $chunk_url $chunk_ref
@@ -643,7 +655,7 @@ update()
     for chunk in $chunks ; do
         local chunk_url=`chunk_prop $specfile $chunk url`
         local chunk_ref=`chunk_prop $specfile $chunk ref`
-        echo -e "$chunk\t$chunk_ref\t($chunk_url)"
+        echo -e "avc: updating $chunk\t$chunk_ref\t($chunk_url)" >&2
         
         update_url "$avc_root/$chunk" $chunk_url $chunk_ref
     done
@@ -652,7 +664,15 @@ update()
     fi
 }
 
-
+for_each_chunk()
+{
+    local avc_root=`find_avc_root_assert`
+    local specfile="${force_config_spec-$avc_root/.avc.specfile.txt}"
+    
+    for chunk in `chunks_all $specfile` ; do
+        run_with_prefix "$chunk: " run_in $avc_root/$chunk "$@"
+    done
+}
 
 usage()
 {
@@ -716,15 +736,13 @@ while [ -n "$1" ] ; do
         shift
     elif [ "$1" = '--' ] ; then
         shift
-        paths="$@"
         break
     else
         if [ -z "$action" ] ; then
             action="$1"
             shift
         else
-            paths="$paths $1"
-            shift
+            break
         fi
     fi
 done
@@ -742,39 +760,45 @@ case "$action" in
         abspath "$*"
         ;;
     checkout)
-        if [ -z "$paths" ] ; then
+        # $1 - ref
+        # $1 - target_folder
+        if [ -z "$*" ] ; then
             echo "avc: checkout requires specfile and folder" >&2
             exit 1
         fi
-        checkout $paths
+        checkout "$1" "$2"
         ;;
     up|update)
-        update $paths
+        # $1 - optional ref
+        update $1
         ;;
     rm|remove)
         if [ -z "$@" ] ; then
             echo "avc: rm requires paths" >&2
             exit 1
         fi
-        dispatch_to_workspaces remove $paths
+        dispatch_to_workspaces remove "$@"
         ;;
         
     ci|commit|checkin)
-        dispatch_to_workspaces commit $paths
+        dispatch_to_workspaces commit "$@"
         ;;
 
     diff|di)
-        dispatch_to_workspaces workspace_diff $paths
+        dispatch_to_workspaces workspace_diff "$@"
         ;;
         
     status)
-        dispatch_to_workspaces status $paths
+        dispatch_to_workspaces status "$@"
         ;;
         
     autoinit)
         autoinit
         ;;
-        
+    each)
+        QUIET=1
+        for_each_chunk "$@"
+        ;;
     overall_status)
         overall_status $paths
         ;;
