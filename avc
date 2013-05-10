@@ -166,6 +166,14 @@ git_remove()
     run_in "$workspace_dir" git rm "$@" 
 }
 
+git_add()
+{
+    local workspace_dir="$1"
+    shift
+    
+    run_in "$workspace_dir" git add "$@" 
+}
+
 git_commit()
 {
     local workspace_dir="$1"
@@ -902,6 +910,13 @@ case "$action" in
     up|update)
         # $@ - chunks | default all
         update "$@"
+        ;;
+    add)
+        if [ -z "$@" ] ; then
+            echo "avc: add requires paths" >&2
+            exit 1
+        fi
+        dispatch_to_workspaces add "$@"
         ;;
     rm|remove)
         if [ -z "$@" ] ; then
