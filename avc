@@ -484,12 +484,28 @@ abspath()
         return
     fi
     
-    local dir=`dirname $1`
-    local name=`basename $1`
-    (
-        cd $dir ; 
-        echo "`pwd`/$name"
-    )
+    if [ -d "$1" ] ; then
+        (
+            cd $1 
+            pwd
+        )
+    else
+        local dir=`dirname $1`
+        local name=`basename $1`
+        (
+            cd $dir 
+            echo "`pwd`/$name"
+        )
+    fi
+    
+}
+
+relpath()
+{
+    local root_path="$1"
+    local target_path="$2"
+    
+    echo "$target_path" | sed -e "s|^${root_path}/||"
 }
 
 find_avc_root_rel()
@@ -633,10 +649,14 @@ dispatch_to_workspaces()
         return
     fi
     
-    match_paths_oneline "$@" | while read workspace paths 
-    do
-        trampoline $subaction $workspace $paths
-    done 
+    match_paths_oneline "$@" | {
+        cd "$avc_root_abs"
+        while read workspace paths 
+        do
+            local workspace_rel=`relpath $avc_root_abs $workspace`
+            trampoline $subaction $workspace_rel $paths
+        done
+    }
 }
 
 readonly overall_status_FORMAT="%- 40s %3s %-30s %12s %12s %4s %4s"
