@@ -2,8 +2,7 @@
 #
 # avc - aggregated vcs
 #
-# 
-
+ 
 #set -x
 
 #
@@ -493,9 +492,9 @@ abspath()
     )
 }
 
-find_avc_root()
+find_avc_root_rel()
 {
-    local potential_avc_root=`pwd`
+    local potential_avc_root=.
     while [ "$potential_avc_root" != "/" ]
     do
         if [ -f "$potential_avc_root/avc.conf" ]
@@ -508,11 +507,42 @@ find_avc_root()
             echo "$potential_avc_root"
             return 0
         fi
-        potential_avc_root=`readlink -f $potential_avc_root/..`      
+        local potential_avc_root_abs="$(abspath $potential_avc_root)"
+        if [ "$potential_avc_root_abs" = "/" ] ; then
+            break
+        fi
+        potential_avc_root="$potential_avc_root/.."      
     done
     return 1
 }
 
+ensure_avc_workspace_variables_setup()
+{
+    if [ -z "$avc_root_rel" ] ; then 
+        avc_root_rel="$(find_avc_root_rel)"
+        if [ -z "$avc_root_rel" ] ; then
+            echo "$PNAME: unable to find 'avc.conf' up in directory structure"
+            exit 1
+        fi
+        avc_root_abs="$(abspath $avc_root_rel)"
+        avc_root_specfile="${avc_root_abs}/.avc.specfile.txt"
+        avc_invocation_folder="$(pwd)"
+    fi
+}
+
+find_avc_root()
+{
+    if [ -z "$avc_root_abs" ] ; then
+        if [ -z "$avc_root_rel" ] ; then    
+            local avc_root_rel="$(find_avc_root_rel)"
+        fi
+        local "$(abspath $avc_root_rel)"
+    fi
+    if [ -z "$avc_root_abs" ] ; then
+        return 1
+    fi
+    echo "$avc_root_abs"
+}
 find_avc_root_assert()
 {
     if ! find_avc_root
@@ -523,30 +553,33 @@ find_avc_root_assert()
 }
 
    
-all_workspaces()
+all_workspaces_rel()
 {
-    avc_root=`find_avc_root_assert`
+    ensure_avc_workspace_variables_setup
     
-    if [ -f "$avc_root/.avc.specfile.txt" ] ; then
-        chunks_all $avc_root/.avc.specfile.txt
+    if [ -f "$avc_root_specfile" ] ; then
+        chunks_all "$avc_root_specfile"
     else
+        # legacy
         cat "$avc_root/avc.conf"
     fi
 }
 
 all_workspaces_abs()
 {
-    for workspace in `all_workspaces` ; do
-        abspath $workspace
+    for workspace in `all_workspaces_rel` ; do
+        abspath "$avc_root_abs/$workspace"
     done
 }
 
 for_all_workspace()
         # this is some shit, to be removed
 {
-    for workspace_dir in `all_workspaces`
+    ensure_avc_workspace_variables_setup
+    cd "$avc_root_abs"
+    for workspace_dir in `all_workspaces_rel`
     do
-        "$@" "$avc_root/$workspace_dir"
+        "$@" "$workspace_dir"
     done
 }
 
@@ -588,7 +621,8 @@ match_paths_oneline()
 
 dispatch_to_workspaces()
 {
-    local avc_root=`find_avc_root_assert`
+    
+    ensure_avc_workspace_variables_setup
     local subaction="$1"    
     shift
     
@@ -624,21 +658,23 @@ overall_status_line()
 
 overall_status()
 {
-    #local chunks="$*"
-    #if [ -z "$chunks" ] ; then
-    #    chunks="`chunks_all $specfile`" 
-    #fi
+    ensure_avc_workspace_variables_setup
     
+    local chunks="$*"
+    if [ -z "$chunks" ] ; then
+        chunks="`chunks_all $avc_root_specfile`" 
+    fi
+    
+    # from now, we operate in avc_root
+    cd "$avc_root_abs"
+     
     QUIET=1
     printf "$overall_status_FORMAT\n" directory scm branch/tag size age mod unkn
     echo  "---------------------------------------------------------------------------------------------------------------"
     
-    #for workspace_dir in $chunks
-    #do
-    #    overall_status_line $workspace_dir
-    #done
-    
-    dispatch_to_workspaces overall_status_line "$@"
+    for chunk in $chunks ; do
+        overall_status_line "$chunk"
+    done
 }
 
 chunks_all()
@@ -709,32 +745,38 @@ checkout()
 
 update()
 {
-    local avc_root=`find_avc_root_assert`
-    local specfile="${force_config_spec-$avc_root/.avc.specfile.txt}"
+    ensure_avc_workspace_variables_setup
+    local specfile="${force_config_spec-$avc_root_specfile}"
     
     local chunks="$*"
     if [ -z "$chunks" ] ; then
         chunks="`chunks_all $specfile`" 
     fi
+    
+    # from now, we operate in avc_root
+    cd "$avc_root_abs"
     for chunk in $chunks ; do
         local chunk_url=`chunk_prop $specfile $chunk url`
         local chunk_ref=`chunk_prop $specfile $chunk ref`
         echo -e "avc: updating $chunk\t$chunk_ref\t($chunk_url)" >&2
         
-        update_url "$avc_root/$chunk" $chunk_url $chunk_ref
+        update_url "$chunk" $chunk_url $chunk_ref
     done
-    if ! diff -q "$specfile" "$avc_root/.avc.specfile.txt" ; then
-        cp "$specfile" "$avc_root/.avc.specfile.txt"
+    if ! diff -q "$specfile" ".avc.specfile.txt" ; then
+        cp "$specfile" ".avc.specfile.txt"
     fi
 }
 
 for_each_chunk()
 {
-    local avc_root=`find_avc_root_assert`
-    local specfile="${force_config_spec-$avc_root/.avc.specfile.txt}"
+    ensure_avc_workspace_variables_setup
+    local specfile="${force_config_spec-$avc_root_specfile}"
+    
+    # from now, we operate in avc_root
+    cd "$avc_root_abs"
     
     for chunk in `chunks_all $specfile` ; do
-        run_with_prefix "$chunk: " run_in $avc_root/$chunk "$@"
+        run_with_prefix "$chunk: " run_in $chunk "$@"
     done
 }
 
@@ -833,8 +875,8 @@ case "$action" in
         checkout "$1" "$2"
         ;;
     up|update)
-        # $1 - optional ref
-        update $1
+        # $@ - chunks | default all
+        update "$@"
         ;;
     rm|remove)
         if [ -z "$@" ] ; then
