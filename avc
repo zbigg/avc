@@ -4,6 +4,8 @@
 #
 # 
 
+#set -x
+
 #
 # avc specfile example
 #
@@ -85,7 +87,17 @@ git_update()
 
 git_search_worskpaces()
 {
-    find . -name ".git" | xargs --no-run-if-empty --max-args=1 dirname
+    find . -name ".git" | xargs --no-run-if-empty --max-args=1 dirname | while read dir ; do
+        local url=`QUIET=1 run_in $dir git config --get remote.origin.url`
+        local ref=`QUIET=1 run_in $dir git describe --always --dirty 2>/dev/null`
+        
+        echo "$dir ref $ref"
+        if [ -n "$url" ] ; then 
+            echo "$dir url $url"
+        else
+            echo "# $dir url <remote.origin.url_not_set>"    
+        fi
+    done
 }
 
 git_unknown_files() 
@@ -164,9 +176,55 @@ mtn_checkout()
         run_in "$target_folder" mtn update --revision=$ref
     fi
 }
+
+mtn_describe()
+{
+    local brid="$(mtn automate get_base_revision_id)"
+    echo $brid
+    
+    
+    return 0
+    
+    # to get branch: 
+    #   mtn automate get_option branch
+    # in future maybe be more amitious and detect tag
+    #local tag="$(mtn automate certs brid | mtn_get_stanza_value name=tag value)"
+    #if [ -n "$tag" ] ; then
+    #    echo "t:$tag"
+    #else
+    #    local branch="$(mtn automate certs brid | mtn_get_stanza_value name=branch value)"
+    #    if [
+    #    echo "h:$branch"
+    #fi
+}
+mtn_get_workspace_url()
+{
+    local server="$(mtn list vars | awk '/database: default-server/ {print $3}')"
+    
+    if [ -n "$server" ] ; then
+        local pattern="$(mtn list vars | awk -v server="$url" '/server-include: / { if( $2 == server ) { print $3} }')"
+        if [ -z "$pattern" ] ; then
+            pattern="*"
+        fi
+        if [[ "$server" = ssh://* ]] ; then
+            server="mtn+$server"
+        fi
+        echo "$server?$pattern"
+    fi
+}
 mtn_search_workspaces()
 {
-    find . -name "_MTN" | xargs --no-run-if-empty  --max-args=1 dirname
+    find . -name "_MTN" | xargs --no-run-if-empty  --max-args=1 dirname | while read dir ; do
+        local url=`QUIET=1 run_in $dir mtn_get_workspace_url`
+        local ref=`QUIET=1 run_in $dir mtn_describe`
+        
+        echo "$dir ref $ref"
+        if [ -n "$url" ] ; then 
+            echo "$dir url $url"
+        else
+            echo "# $dir url <remote.origin.url_not_set>"    
+        fi
+    done
 }
 
 mtn_unknown_files()
@@ -199,11 +257,15 @@ is_this_mtn()
 
 svn_find_workspaces()
 {
+    # not supported
+    #return 0
     find . -name ".svn" | while read dot_svn_dir 
     do
         workspace_dir=`dirname $dot_svn_dir`
         if [ ! -d "$workspace_dir/../.svn" ] ; then
-            echo "$DIR"
+            local url="$(run_in "$workspace_dir" svn info | awk '/^URL/ {printf $2; }')"
+            echo "$workspace_dir ref HEAD"
+            echo "$workspace_dir url $url"
         fi
     done
 }
@@ -280,10 +342,10 @@ autoinit()
         git_search_worskpaces
         mtn_search_workspaces
         svn_find_workspaces        
-    ) | potentially_replace avc.conf
+    ) | potentially_replace .avc.specfile.txt
         
     echo "found workspaces: "
-    cat avc.conf            
+    chunks_all .avc.specfile.txt
 }
 #
 # avc SCM multiplex
@@ -484,7 +546,7 @@ for_all_workspace()
 {
     for workspace_dir in `all_workspaces`
     do
-        "$@" $workspace_dir
+        "$@" "$avc_root/$workspace_dir"
     done
 }
 
@@ -526,7 +588,7 @@ match_paths_oneline()
 
 dispatch_to_workspaces()
 {
-    
+    local avc_root=`find_avc_root_assert`
     local subaction="$1"    
     shift
     
@@ -562,19 +624,21 @@ overall_status_line()
 
 overall_status()
 {
-    local chunks="$*"
-    if [ -z "$chunks" ] ; then
-        chunks="`chunks_all $specfile`" 
-    fi
+    #local chunks="$*"
+    #if [ -z "$chunks" ] ; then
+    #    chunks="`chunks_all $specfile`" 
+    #fi
     
     QUIET=1
     printf "$overall_status_FORMAT\n" directory scm branch/tag size age mod unkn
     echo  "---------------------------------------------------------------------------------------------------------------"
     
-    for workspace_dir in $chunks
-    do
-        overall_status_line $workspace_dir
-    done
+    #for workspace_dir in $chunks
+    #do
+    #    overall_status_line $workspace_dir
+    #done
+    
+    dispatch_to_workspaces overall_status_line "$@"
 }
 
 chunks_all()
@@ -800,7 +864,7 @@ case "$action" in
         for_each_chunk "$@"
         ;;
     overall_status)
-        overall_status $paths
+        overall_status "$@"
         ;;
         
     *)
