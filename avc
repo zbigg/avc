@@ -2,19 +2,42 @@
 #
 # avc - aggregated vcs
 #
- 
+# begin - auto usage contents
+## usage: $PNAME <action> PATHS
+## agreegated vcs ACTIONs:
+## 
+##    st/status         - status in each dir
+##    di/diff           - diff on
+##    rm/remove         - remove files
+##    ci/commit/checkin - commit files
+##    up/update (-f/--fetch) - update workspace (and pull if possible)
+##    overall_status    - show summary information (path, type, branch, size, modified & unknown files)
+## 
+## avc management:
+##    checkout SPECFILE FOLDER
+##                      - creates checkout described by SPECFILE to
+##                        specified FOLDER
+##    autoinit - create initial configuration by digging current
+##               folder
+## options:
+##   -n | --dry-run     - just print commands, don't execute anything
+##   -h | --help | help - print this help message
+##   -c FILE | --config-spec FILE 
+##                      - set new config specfile when updating
+##   -f | --fetch | --pull - fetch new changes before updating
+##   -m MSG | --message MSG 
+##                      - commit message (for commit action)
+# end - auto usage contents
+
 #set -x
 
 #
 # avc specfile example
 #
-##
-# custom development env setup
-#
 #
 # cboom	 ref	branches/goo
 # kuwaka ref	trunk
-# boost  ref     boost-1.4.6
+# boost  ref    boost-1.4.6
 # 
 # boost	url	git+ssh://git@git.foo.org/boost
 # cboom	url	svn+https://svn.foo.org/svn/repo/cboom
@@ -804,31 +827,11 @@ for_each_chunk()
 
 usage()
 {
-    echo "usage: $PNAME <action> PATHS"
-    echo "agreegated vcs ACTIONs:"
-    echo ""
-    echo "   st/status         - status in each dir"
-    echo "   di/diff           - diff on"
-    echo "   rm/remove         - remove files"
-    echo "   ci/commit/checkin - commit files"
-    echo "   up/update (-f/--fetch) - update workspace (and pull if possible)"
-    echo "   overall_status    - show summary information (path, type, branch, size, modified & unknown files)"
-    echo ""
-    echo "avc management:"
-    echo "   checkout SPECFILE FOLDER"
-    echo "                     - creates checkout described by SPECFILE to"
-    echo "                       specified FOLDER"
-    echo "   autoinit - create initial configuration by digging current"
-    echo "              folder"
-    echo "options:"
-    echo "  -n | --dry-run     - just print commands, don't execute anything"
-    echo "  -h | --help | help - print this help message"
-    echo "  -c FILE | --config-spec FILE" 
-    echo "                     - set new config specfile when updating"
-    echo "  -f | --fetch | --pull - fetch new changes before updating"
-    echo "  -m MSG | --message MSG" 
-    echo "                     - commit message (for commit action)"
+    local idx="${#BASH_SOURCE[*]}"
+    local source="${BASH_SOURCE[$idx-1]]}"
+    egrep '^##( |$)' $source | cut -c4- >&2
 }
+
 PNAME=`basename $0`
 
 #set -x
