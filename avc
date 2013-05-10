@@ -912,14 +912,14 @@ case "$action" in
         update "$@"
         ;;
     add)
-        if [ -z "$@" ] ; then
+        if [ -z "$*" ] ; then
             echo "avc: add requires paths" >&2
             exit 1
         fi
         dispatch_to_workspaces add "$@"
         ;;
     rm|remove)
-        if [ -z "$@" ] ; then
+        if [ -z "$*" ] ; then
             echo "avc: rm requires paths" >&2
             exit 1
         fi
