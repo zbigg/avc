@@ -341,10 +341,10 @@ autoinit()
         git_search_worskpaces
         mtn_search_workspaces
         svn_find_workspaces        
-    ) | potentially_replace .avc.specfile.txt
+    ) | potentially_replace "$avc_root_specfile_name"
         
     echo "found workspaces: "
-    chunks_all .avc.specfile.txt
+    chunks_all "$avc_root_specfile_name"
 }
 #
 # avc SCM multiplex
@@ -502,7 +502,7 @@ find_avc_root_rel()
             echo "$potential_avc_root"
             return 0
         fi
-        if [ -f "$potential_avc_root/.avc.specfile.txt" ]
+        if [ -f "$potential_avc_root/$avc_root_specfile_name" ]
         then
             echo "$potential_avc_root"
             return 0
@@ -516,6 +516,8 @@ find_avc_root_rel()
     return 1
 }
 
+readonly avc_root_specfile_name=".avc.specfile.txt"
+
 ensure_avc_workspace_variables_setup()
 {
     if [ -z "$avc_root_rel" ] ; then 
@@ -525,7 +527,7 @@ ensure_avc_workspace_variables_setup()
             exit 1
         fi
         avc_root_abs="$(abspath $avc_root_rel)"
-        avc_root_specfile="${avc_root_abs}/.avc.specfile.txt"
+        avc_root_specfile="${avc_root_abs}/$avc_root_specfile_name"
         avc_invocation_folder="$(pwd)"
     fi
 }
@@ -740,7 +742,7 @@ checkout()
             checkout_url "$target_folder/$chunk" $chunk_url $chunk_ref
         fi
     done
-    cp "$specfile" "$target_folder/.avc.specfile.txt"
+    cp "$specfile" "$target_folder/$avc_root_specfile_name"
 }
 
 update()
@@ -762,8 +764,8 @@ update()
         
         update_url "$chunk" $chunk_url $chunk_ref
     done
-    if ! diff -q "$specfile" ".avc.specfile.txt" ; then
-        cp "$specfile" ".avc.specfile.txt"
+    if ! diff -q "$specfile" $avc_root_specfile ; then
+        cp "$specfile" $avc_root_specfile
     fi
 }
 
