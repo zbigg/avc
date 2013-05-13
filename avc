@@ -152,7 +152,7 @@ git_update()
         fi
     fi        
     
-    run_in "$target_folder" echo git checkout $ref
+    run_in "$target_folder" git checkout $ref
 }
 
 
@@ -871,6 +871,8 @@ checkout()
         
         if [ ! -d "$target_folder/$chunk" ] ; then
             checkout_url "$target_folder/$chunk" "$chunk_url" "$chunk_refs"
+        else
+            update_url "$target_folder/$chunk" "$chunk_url" "$chunk_refs"
         fi
     done
     cp "$specfile" "$target_folder/$avc_root_specfile_name"
