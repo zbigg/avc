@@ -35,6 +35,7 @@
 # avc specfile example
 #
 #
+# *      ref    feature/foobar
 # cboom	 ref	branches/goo
 # kuwaka ref	trunk
 # boost  ref    boost-1.4.6
@@ -47,6 +48,8 @@
 #  kuwaka -> svn+https://svn.foo.org/svn/repo/kuwaka/trunk
 #  boost  -> git+ssh://git@git.foo.org/boost && checkout boost-1.4.6
 #
+# * ref FOO -> will select reference FOO if exists in all chunks, else
+#             it will select next version specified in specfile
 
 
 #DRY_RUN=1
@@ -67,15 +70,51 @@ run_with_prefix()
 # git
 #
 
+git_choose_existing_ref()
+{
+    local workspace="$1"
+    shift
+    local refs="$*"
+    
+    local tmpfile=/tmp/.avc-git_choose_existing_ref-$USER-$$
+    git-ls-remote "$workspace" > $tmpfile
+    local found_ref=""
+    for ref in $refs ; do
+        if egrep -q "refs/heads/$ref\$" $tmpfile ; then
+            found_ref="$ref"
+            break
+        fi
+        if egrep -q "refs/remotes/origin/$ref\$" $tmpfile ; then
+            found_ref="$ref"
+            break
+        fi            
+        if egrep -q "refs/tags/$ref\$" $tmpfile ; then
+            found_ref="$ref"
+            break
+        fi
+    done
+    rm -rf $tmpfile
+    echo "$found_ref"    
+}
 git_checkout()
 {
     local target_folder="$1"
     local clone_url="$2"
-    local ref="$3"
+    shift
+    shift
+    
+    local refs="$*"
+    
     if [ ! -d "$target_folder" ] ; then
         run_in .                git clone "$clone_url" "$target_folder"
     else
         run_in $target_folder   git fetch
+    fi
+    
+    local ref="$(git_choose_existing_ref $target_folder $refs)"
+    if [ -z "$ref" ] ; then
+        echo "dews-avc: failed to checkout $target_folder; none following references exists in repo: $refs" >&2
+        return 1
     fi
     run_in "$target_folder" git checkout $ref
 }
@@ -89,7 +128,10 @@ git_update()
 {
     local target_folder="$1"
     local clone_url="$2"
-    local ref="$3"
+    shift
+    shift
+    
+    local refs="$*"
     if [ ! -d "$target_folder" ] ; then
         run_in . git clone "$clone_url" "$target_folder"
     else
@@ -97,13 +139,20 @@ git_update()
             run_in $target_folder git fetch
         fi
     fi
+    local ref="$(git_choose_existing_ref "$target_folder" $refs)"
+    if [ -z "$ref" ] ; then
+        echo "dews-avc: failed to checkout $target_folder; none following references exists in repo: $refs" >&2
+        return 1
+    fi
+    
     if QUIET=1 run_in "$target_folder" git_is_branch origin/$ref ; then 
         if ! run_in "$target_folder" git merge --ff origin/$ref ; then
             echo "avc: $target_folder, unable to update/fast-forward from origin/$ref -> $ref; please merge or rebase manually"
             return 1
         fi
     fi        
-    run_in "$target_folder" git checkout $ref
+    
+    run_in "$target_folder" echo git checkout $ref
 }
 
 
@@ -136,7 +185,7 @@ git_content_tag()
 {
     local branch=`run_in $1 git branch`
     if echo "$branch" | grep -qF "(no branch)" ; then
-        run_in "$1" git describe 2>/dev/null
+        run_in "$1" git describe --always --dirty 2>/dev/null
     else
         echo "$branch" | awk '/\*/ {print $2;}'
     fi
@@ -455,7 +504,7 @@ url_trampoline()
     elif [[ "$url" = mtn* ]] ; then
         mtn_$method "$@"
     else
-        echo "avc: not supported URL scheme: $url"
+        echo "avc: not supported URL scheme: '$url'"
         return 1
     fi
 }
@@ -739,7 +788,7 @@ chunks_all()
         /^#/ {
                 next;
         }
-        // {
+        /^([A-Za-z0-9_-]+)[ \t]+/ {
                 print $1;
         }
         ' $specfile | sort -u
@@ -753,17 +802,21 @@ chunk_prop()
     local specfile="$1"
     local chunk="$2"
     local prop="$3"
-    awk '
+    awk -v chunk="$chunk" '
         /^#/ {
-                next;
+            next;
         }
-        /^'${chunk}'[ \t]+'${prop}'[ \t]+/ { 
-                print $3;
-                found=1;
-                exit 0;
+        /^([^ \t]+)[ \t]+'${prop}'[ \t]+/ {
+            if( ! found ) {
+                if( $1 == chunk || $1 == "*"  ) { 
+                    printf("%s", $3);
+                    found=1
+                    exit 0
+                }
+            }
         }
         END {
-                if( !found)
+            if( !found)
                 exit 1
         }
     ' $specfile
@@ -771,6 +824,33 @@ chunk_prop()
     return $r
 }
 
+chunk_prop_all()
+        # chunk_prop FILE CHUNK PROP_NAME
+        #   get value of PROP_NAME of CHUNK from
+        #   FILE
+{
+    local specfile="$1"
+    local chunk="$2"
+    local prop="$3"
+    awk -v chunk="$chunk" '
+        /^#/ {
+            next;
+        }
+        /^([^ \t]+)[ \t]+'${prop}'[ \t]+/ {
+            if( $1 == chunk || $1 == "*" ) {
+                if( found ) printf(" ");
+                printf("%s", $3);
+                found=1
+            }
+        }
+        END {
+            if( !found)
+            exit 1
+        }
+    ' $specfile
+    r=$?
+    return $r
+}
 checkout()
 {
     #set -x
@@ -785,12 +865,12 @@ checkout()
     fi
     mkdir -p $target_folder    
     for chunk in $chunks ; do
-        local chunk_url=`chunk_prop $specfile $chunk url`
-        local chunk_ref=`chunk_prop $specfile $chunk ref`
-        echo -e "avc: checking out: $chunk\t$chunk_ref\t($chunk_url)" >&2
+        local chunk_url="$(chunk_prop $specfile $chunk url)"
+        local chunk_refs="$(chunk_prop_all $specfile $chunk ref)"
+        echo -e "avc: checking out: $chunk\t$chunk_refs\t($chunk_url)" >&2
         
         if [ ! -d "$target_folder/$chunk" ] ; then
-            checkout_url "$target_folder/$chunk" $chunk_url $chunk_ref
+            checkout_url "$target_folder/$chunk" "$chunk_url" "$chunk_refs"
         fi
     done
     cp "$specfile" "$target_folder/$avc_root_specfile_name"
@@ -809,11 +889,11 @@ update()
     # from now, we operate in avc_root
     cd "$avc_root_abs"
     for chunk in $chunks ; do
-        local chunk_url=`chunk_prop $specfile $chunk url`
-        local chunk_ref=`chunk_prop $specfile $chunk ref`
-        echo -e "avc: updating $chunk\t$chunk_ref\t($chunk_url)" >&2
+        local chunk_url="$(chunk_prop $specfile $chunk url)"
+        local chunk_refs="$(chunk_prop_all $specfile $chunk ref)"
+        echo -e "avc: updating $chunk\t$chunk_refs\t($chunk_url)" >&2
         
-        update_url "$chunk" $chunk_url $chunk_ref
+        update_url "$chunk" "$chunk_url" "$chunk_refs"
     done
     if ! diff -q "$specfile" $avc_root_specfile ; then
         cp "$specfile" $avc_root_specfile
@@ -895,9 +975,6 @@ case "$action" in
     help)
         usage
         ;;
-    abspath)
-        abspath "$*"
-        ;;
     checkout)
         # $1 - ref
         # $1 - target_folder
@@ -950,9 +1027,14 @@ case "$action" in
         ;;
         
     *)
-        echo "avc: invalid action '$action'" >&2
-        usage
-        exit 1
+        if [ -n "$INTRO" ] ; then
+            $action "$@"
+            exit $?
+        else
+            echo "avc: invalid action '$action'" >&2
+            usage
+            exit 1
+        fi
         ;;        
 esac
 
