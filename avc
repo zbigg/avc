@@ -225,12 +225,20 @@ git_add()
 }
 
 git_commit()
+     # commit SPECIFIED or ALL changes into workspace
+     # note, we're changing default behaviour of git if not paths
+     # were specified to comply with MOST VCS-es, which default 
+     # bahaviour is to commit all files modified in workspace
+     # are selected to next commit
 {
     local workspace_dir="$1"
     shift
     local git_commit_options=""
     if [ -n "$commit_message" ] ; then
         git_commit_options="-m \"$commit_message\""
+    fi
+    if [ -z "$*" ] ; then
+        git_commit_options="$git_commit_options -a"
     fi
     run_in "$workspace_dir" git commit $git_commit_options "$@"
 }
