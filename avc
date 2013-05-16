@@ -742,7 +742,7 @@ match_paths()
         local path_abs="$(abspath $path)"
         
         for workspace_dir_abs in $all_workspaces_abs ; do
-            if echo "$path_abs" | egrep -q "^$workspace_dir_abs" ; then
+            if echo "$path_abs" | egrep -q "^$workspace_dir_abs(/|$$)" ; then
                 echo "$workspace_dir_abs $path_abs"
             fi
         done
