@@ -361,6 +361,23 @@ git_commit()
     fi
     run_in "$workspace_dir" git commit $git_commit_options "$@"
 }
+
+git_ignore_file()
+{
+    local workspace="$1"
+    shift
+    local gitignore_file="$workspace/.gitignore"
+    touch "$gitignore_file"
+    
+    for pattern in "$@" ; do
+        pattern_rel="$(relpath $workspace "$pattern")"
+        if ! grep -Fq "$pattern_rel" "$gitignore_file" ; then
+            echo "avc: adding $pattern_rel to $gitignore_file" >&2 
+            echo "$pattern_rel" >> "$gitignore_file"
+        fi
+    done
+}
+
 #
 # mtn
 #
@@ -500,6 +517,28 @@ mtn_status()
         }
 
     '
+}
+
+mtn_basic_glob_to_regexp()
+{
+    sed -e 's/\./\\./g' \
+        -e 's/*/.*/g' \
+        -e 's/?/.?/g'
+}
+mtn_ignore_file()
+{
+    local workspace="$1"
+    shift
+    local mtn_ignore_file="$workspace/.mtn-ignore"
+    touch "$mtn_ignore_file"
+    
+    for pattern in "$@" ; do
+        pattern_rel="$(relpath $workspace "$pattern" | mtn_basic_glob_to_regexp)"
+        if ! grep -Fq "$pattern_rel" "$mtn_ignore_file" ; then
+            echo "avc: adding $pattern_rel to $mtn_ignore_file" >&2 
+            echo "$pattern_rel" >> "$mtn_ignore_file"
+        fi
+    done
 }
 
 is_this_mtn()
@@ -751,10 +790,10 @@ abspath()
             pwd
         )
     else
-        local dir=`dirname $1`
-        local name=`basename $1`
+        local dir="$(dirname "$1")"
+        local name="$(basename "$1")"
         (
-            cd $dir 
+            cd $dir
             echo "`pwd`/$name"
         )
     fi
@@ -866,7 +905,7 @@ match_paths()
 (
     local all_workspaces_abs="$(all_workspaces_abs)"
     for path in "$@" ; do
-        local path_abs="$(abspath $path)"
+        local path_abs="$(abspath "$path")"
         
         for workspace_dir_abs in $all_workspaces_abs ; do
             if echo "$path_abs" | egrep -q "^$workspace_dir_abs(/|\$)" ; then
@@ -902,7 +941,7 @@ dispatch_to_workspaces()
 {
     
     ensure_avc_workspace_variables_setup
-    local subaction="$1"    
+    local subaction="$1"
     shift
     
     if [ -z "$1" ] ; then
@@ -915,7 +954,8 @@ dispatch_to_workspaces()
         while read workspace paths 
         do
             local workspace_rel=`relpath $avc_root_abs $workspace`
-            trampoline $subaction $workspace_rel $paths
+            set -- "$paths"
+            trampoline $subaction $workspace_rel "$@"
         done
     }
 }
@@ -1192,7 +1232,14 @@ case "$action" in
         fi
         dispatch_to_workspaces remove "$@"
         ;;
-        
+    ignore)
+        if [ -z "$*" ] ; then
+            echo "avc: ignore requires paths" >&2
+            exit 1
+        fi
+        dispatch_to_workspaces ignore_file "$@"
+        ;;
+
     ci|commit|checkin)
         dispatch_to_workspaces commit "$@"
         ;;
@@ -1204,7 +1251,9 @@ case "$action" in
     status)
         dispatch_to_workspaces status "$@"
         ;;
-        
+    unknown)
+        dispatch_to_workspaces status "$@" | awk '/\?/ {print $2}'
+        ;;
     autoinit)
         autoinit
         ;;
