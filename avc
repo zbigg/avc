@@ -29,7 +29,71 @@
 ##                      - commit message (for commit action)
 # end - auto usage contents
 
-#set -x
+#
+# AVC CHECKOUT
+#   Is simple operation that invokes just plain (pull/clone/fetch) and 
+#   checkout(unarchive) of workspace into folders.
+#   Repetitive checkout will (changed-or-not specfile) will update
+#   workspace (possibly incomplete) to state in specfile.
+#
+#   CHUNKS that are recognized as MODIFIED, i,e don't match REF
+#   known to AVC will be skipped as DIRTY.
+#   
+# AVC UPDATE/REBASE
+#   Essentially the same as checkout, but a REBASE operation is attempted
+#   which is equal to
+#     git fetch && git rebase origin/BRANCH  -- if REF is branch and has origin
+#         in case of conflict, CHUNK will be left in unclean state and it have
+#         to be resolved manually using git command in CHUNK folder
+#     mtn pull && mtn up  -- 
+#         in case of conflict, CHUNK will be left unchanged and
+#         user have to clean-up copy and/or resolve conflict using mtn
+#     svn up (and/or switch)
+#         in case of conflict, CHUNK will be left svn conflicted state and
+#         user have to clean-up copy and/or resolve conflict using svn
+#         
+#
+
+#
+# avc specfile specification
+#
+# AVC specfile is built from one-line object-property-value triplets.
+# empty lines are ignored, lines beginning with # are comments.
+#
+# AVC operates on CHUNKS whose properties are defined in specfile.
+# Each CHUNK is identified, by it's relative path in workspace.
+# Workspace is built-up from all CHUNKS that has enough definition
+# to be used for particural command.
+#
+# For checkout, minimal set of properties is 'ref' and 'url'.
+#
+# CHUNK properties
+#
+#  ref  - a VCS specific "selector" of revision to
+#         be checked-out or followed-by (when updating and/or
+#         rebasing).
+#         git: branch,tag,commit-sha
+#         svn: path-relative-to-baseurl
+#         mtn: selector (h:..., t:...)
+#
+#  url  - a VSC specific URL of repository from which
+#         AVC shall checkout/and/or update workspace
+#         git: git+ssh://... , git://...
+#         svn: svn+https://... svn://...
+#         mtn: mtn+ssh://...   mtn://...
+#
+# GIT SPECIFIC options
+#
+#     git.clone_options
+#         options added to fetch&clone operations (for example)
+#         example
+#           some-big-subproject  git.clone_options --depth=10
+#     git.fetch_clone_options
+#         options added to fetch&clone operations (for example, 
+#
+# MONOTONE SPECIFICS
+#
+#
 
 #
 # avc specfile example
@@ -50,6 +114,61 @@
 #
 # * ref FOO -> will select reference FOO if exists in all chunks, else
 #             it will select next version specified in specfile
+
+#
+# FUTURE DIRECTIONS
+# 
+# INTERACTIVE COOL COMMIT
+#
+# $EDITOR executed with following
+#
+#   --
+#   ## avc:mofified
+#   ## enter changelog entries below group of files to commit them
+#   ## remove file to skip commit; empty message aborts commit
+#   M foo/a.c
+#   M foo/b.c
+#   M foo/Makefile
+#   M bar/main.c
+#   M bar/Makefile
+#   A bar/NEWS.txt
+#
+#   ## unknown files
+#   # (just change them to A them and/or add them together with those modified)
+#   ? bar/plugin.c
+#   ? foo/build-howto.txt
+#
+#   ## avc:end
+#   ## patch for reference (your-editor will most likely complete words
+#   ## for commit message)
+# ..diff a/foo/a.c b/foo/a.c.
+#   +++ a/foo/a.c 
+#   --- a/foo/a.c.
+#   ...
+#   ... (whole patch is rendered here for reference)
+#
+# WILDCARD REFERENCE
+#
+#  * url git+ssh://foo.org/vendor/*
+#    for WILDCARD patterns, wildcard is replaced with match when value
+#    is taken for use.
+#    above sets URL pattern for EACH chunk that is defined elsewhere 
+#    in specfile.
+
+# ARCHIVE SPECIFICS
+#
+#   remote_archive
+#     3rdparty/unittest++ remote.archive https://downloads.sf.net/unittest++/files/unittest++-1.3.zip#
+#
+
+# CUSTOM OPTIONS
+#
+#  custom.checkout
+#     example:
+#       3rdparty/foo-1.2.3 custom.checkout ln -s /var/mnt/builds/foo-1.2.3 foo-1.2.3
+#  custom.update
+#     example:
+#       3rdparty/foo-1.2.3 custom.checkout ln -s /var/mnt/builds/foo-1.2.3 foo-1.2.3
 
 #set -x
 
