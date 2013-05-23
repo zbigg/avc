@@ -378,6 +378,10 @@ git_ignore_file()
     done
 }
 
+git_push()
+{
+    run_in "$1" git push
+}
 #
 # mtn
 #
@@ -1143,6 +1147,34 @@ for_each_chunk()
     done
 }
 
+for_each_chunk2()
+{
+    ensure_avc_workspace_variables_setup
+    
+    local specfile="${force_config_spec-$avc_root_specfile}"
+    local chunks=""
+    while true ; do
+        if [ "$1" = "--" ] ; then
+            shift
+            break
+        else
+            chunks="$chunks $1"
+            shift
+        fi
+    done
+    
+    if [ -z "$chunks" ] ; then
+        chunks="`chunks_all $specfile`" 
+    fi
+    
+    # from now, we operate in avc_root
+    cd "$avc_root_abs"
+    
+    for chunk in $chunks ; do
+        run_with_prefix "$chunk: " run_in $chunk "$@"
+    done
+}
+
 usage()
 {
     local idx="${#BASH_SOURCE[*]}"
@@ -1247,7 +1279,9 @@ case "$action" in
     diff|di)
         dispatch_to_workspaces workspace_diff "$@"
         ;;
-        
+    push)
+        dispatch_to_workspaces push "$@"
+        ;;
     status)
         dispatch_to_workspaces status "$@"
         ;;
@@ -1260,6 +1294,9 @@ case "$action" in
     each)
         #QUIET=1
         for_each_chunk "$@"
+        ;;
+    peach)
+        for_each_chunk2 "$@"
         ;;
     overall_status)
         overall_status "$@"
