@@ -57,13 +57,30 @@
 #
 # avc specfile specification
 #
-# AVC specfile is built from one-line object-property-value triplets.
+# AVC specfile is built from one-line chunk-property-value triplets.
 # empty lines are ignored, lines beginning with # are comments.
 #
 # AVC operates on CHUNKS whose properties are defined in specfile.
 # Each CHUNK is identified, by it's relative path in workspace.
 # Workspace is built-up from all CHUNKS that has enough definition
 # to be used for particural command.
+#
+# When '*' (wildcard) is used as chunk name, then it doesn't constitute
+# a chunk but property that matches all chunks. Pattern '*' in property
+# value is replaced with matched CHUNK name.
+#
+# For, example, for specfile:
+#   bar ref feature-new-ui
+#   foo ref foo-1.3
+#   spam ref spam-1.4.1.1
+#   * url git+ssh://somehost/*
+#   * git.reference_repository /var/cache/git-repos-somehost/*
+#
+# Will clone all bar from git+ssh://somehost/bar, and so on.
+#
+
+#
+# 
 #
 # For checkout, minimal set of properties is 'ref' and 'url'.
 #
@@ -85,15 +102,13 @@
 #
 # GIT SPECIFIC options
 #
-#     git.clone_options
-#         options added to fetch&clone operations (for example)
-#         example
-#           some-big-subproject  git.clone_options --depth=10
-#     git.fetch_clone_options
-#         options added to fetch&clone operations (for example, 
+#     git.reference_repository PARAM
+#         implies --reference PARAM when cloning repository
 #
 # MONOTONE SPECIFICS
 #
+#     mtn.db
+#         uses this monotone db instead of automatically created for each chunk
 #
 
 #
@@ -115,6 +130,11 @@
 #
 # * ref FOO -> will select reference FOO if exists in all chunks, else
 #             it will select next version specified in specfile
+#
+# * git.reference_repository /var/cache/repos/*.git
+#           -> when cloning repo, will always use reference repository
+#              with alternate storage
+#
 
 #
 # FUTURE DIRECTIONS
@@ -255,7 +275,11 @@ git_checkout()
         run_in $target_folder git fetch
     fi
     
-    local ref="$(git_choose_existing_ref $target_folder $refs)"
+    if [ -d "$target_folder" ] ; then
+        local ref="$(git_choose_existing_ref $target_folder $refs)"
+    else
+        local ref="$(git_choose_existing_ref $clone_url $refs)"
+    fi
     if [ -z "$ref" ] ; then
         echo "dews-avc: failed to checkout $target_folder; none following references exists in repo: $refs" >&2
         return 1
@@ -283,7 +307,11 @@ git_update()
             run_in $target_folder git fetch
         fi
     fi
-    local ref="$(git_choose_existing_ref "$target_folder" $refs)"
+    if [ -d "$target_folder" ] ; then
+        local ref="$(git_choose_existing_ref $target_folder $refs)"
+    else
+        local ref="$(git_choose_existing_ref $clone_url $refs)"
+    fi
     if [ -z "$ref" ] ; then
         echo "dews-avc: failed to checkout $target_folder; none following references exists in repo: $refs" >&2
         return 1
@@ -660,10 +688,10 @@ run_in()
         if [ -z "$QUIET" ] ; then
             echo "avc: "$@" (in $f)" >&2
         fi
-        cd $f
         if [ -n "$DRY_RUN" ] ; then
             exit 0
         fi
+        cd $f
         eval "$@"
         exit $? 
     ) 
@@ -1086,7 +1114,14 @@ chunk_prop()
         }
         /^([^ \t]+)[ \t]+'${prop}'[ \t]+/ {
             if( ! found ) {
-                if( $1 == chunk || $1 == "*"  ) { 
+                if( $1 == "*" ) {
+                    value=$3
+                    sub(/\*/,chunk,value)
+                    printf("%s", value);
+                    found=1
+                    exit 0
+                } else
+                if( $1 == chunk ) { 
                     printf("%s", $3);
                     found=1
                     exit 0
@@ -1115,6 +1150,15 @@ chunk_prop_all()
             next;
         }
         /^([^ \t]+)[ \t]+'${prop}'[ \t]+/ {
+            if( $1 == "*" ) {
+                value=$3
+                sub(/\*/,chunk,value)
+                
+                if( found ) printf(" ");
+                printf("%s", value);
+                found=1
+               
+            } else
             if( $1 == chunk || $1 == "*" ) {
                 if( found ) printf(" ");
                 printf("%s", $3);
