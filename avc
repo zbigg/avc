@@ -581,6 +581,19 @@ mtn_basic_glob_to_regexp()
         -e 's/*/.*/g' \
         -e 's/?/.?/g'
 }
+
+mtn_commit()
+{
+    local workspace_dir="$1"
+    shift
+    local mtn_commit_options=""
+    if [ -n "$commit_message" ] ; then
+        mtn_commit_options="-m \"$commit_message\""
+    fi
+    
+    run_in "$workspace_dir" mtn commit $mtn_commit_options "$@"
+}
+
 mtn_ignore_file()
 {
     local workspace="$1"
@@ -1037,7 +1050,7 @@ dispatch_to_workspaces()
         while read workspace paths 
         do
             local workspace_rel=`relpath $avc_root_abs $workspace`
-            set -- "$paths"
+            set -- $paths
             trampoline $subaction $workspace_rel "$@"
         done
     }
@@ -1279,8 +1292,6 @@ usage()
 
 PNAME=`basename $0`
 
-#set -x
-
 while [ -n "$1" ] ; do
     if   [ "$1" = "-h" -o "$1" = "--help" ]; then
         usage
@@ -1318,7 +1329,8 @@ while [ -n "$1" ] ; do
             action="$1"
             shift
         else
-            break
+            args="$args $1"
+            shift
         fi
     fi
 done
@@ -1327,6 +1339,16 @@ if [ -z "$action" ] ; then
     echo "avc: action not specified" >&2
     exit 1
 fi
+
+if [ -n "$DRY_RUN" ] ; then
+    echo "avc: dry-run mode; not executing any modyfying actions" >&2
+fi
+
+# -f -- don't expand globs
+set -f
+
+# reassign args as positional parameters
+set -- $args
 
 case "$action" in
     help)
