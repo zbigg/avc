@@ -76,11 +76,12 @@
 #         svn: path-relative-to-baseurl
 #         mtn: selector (h:..., t:...)
 #
-#  url  - a VSC specific URL of repository from which
+#  url  - a VCS specific URL of repository from which
 #         AVC shall checkout/and/or update workspace
 #         git: git+ssh://... , git://...
 #         svn: svn+https://... svn://...
 #         mtn: mtn+ssh://...   mtn://...
+#         link: link:symlink path
 #
 # GIT SPECIFIC options
 #
@@ -216,6 +217,12 @@ git_choose_existing_ref()
     rm -rf $tmpfile
     echo "$found_ref"    
 }
+
+remove_git_plus_from_url()
+{
+    echo "$1" | sed -e 'sX^git+XX'
+}
+
 git_checkout()
 {
     local target_folder="$1"
@@ -225,7 +232,9 @@ git_checkout()
     
     local refs="$*"
     
+    
     if [ ! -d "$target_folder" ] ; then
+        clone_url="$(remove_git_plus_from_url $clone_url)"
         run_in .                git clone "$clone_url" "$target_folder"
     else
         run_in $target_folder   git fetch
@@ -253,6 +262,7 @@ git_update()
     
     local refs="$*"
     if [ ! -d "$target_folder" ] ; then
+        clone_url="$(remove_git_plus_from_url $clone_url)"
         run_in . git clone "$clone_url" "$target_folder"
     else
         if [ -n "$enable_fetch_while_update" ] ; then
@@ -600,6 +610,31 @@ svn_content_tag()
 }
 
 #
+# link
+# link, is a chunk that has entry in form:
+#  chunk url link:relative_path_in_avc_root
+#
+
+link_checkout()
+{
+    local target_folder="$1"
+    local clone_url="$2"
+    shift
+    shift
+    local refs="$*"
+    
+    local clone_path="$(echo "$clone_url" | sed -e 'sX^link:XX')"
+    
+    echo "avc: ln -fs $clone_path $target_folder"    
+    run_in "." ln -fs "$clone_path" "$target_folder"
+}
+
+link_update()
+{
+    link_checkout "$@"
+}
+
+#
 # common
 #
 
@@ -727,6 +762,8 @@ url_trampoline()
         svn_$method "$@"
     elif [[ "$url" = mtn* ]] ; then
         mtn_$method "$@"
+    elif [[ "$url" = link* ]] ; then
+        link_$method "$@"
     else
         echo "avc: not supported URL scheme: '$url'"
         return 1
