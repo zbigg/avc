@@ -223,6 +223,22 @@ remove_git_plus_from_url()
     echo "$1" | sed -e 'sX^git+XX'
 }
 
+git_clone()
+{
+    local target_folder="$1"
+    local clone_url="$2"
+    
+    clone_url="$(remove_git_plus_from_url $clone_url)"
+    local reference_repo="$(chunk_prop "$avc_root_specfile" "$target_folder" git.reference_repository)"
+    local git_clone_options=""
+    
+    if [ -n "$reference_repo" ] ; then
+        git_clone_options="$git_clone_options --reference $reference_repo"
+    fi
+    
+    run_in . git clone -n $git_clone_options "$clone_url" "$target_folder"
+}
+
 git_checkout()
 {
     local target_folder="$1"
@@ -234,10 +250,9 @@ git_checkout()
     
     
     if [ ! -d "$target_folder" ] ; then
-        clone_url="$(remove_git_plus_from_url $clone_url)"
-        run_in .                git clone "$clone_url" "$target_folder"
+        git_clone "$target_folder" "$clone_url"
     else
-        run_in $target_folder   git fetch
+        run_in $target_folder git fetch
     fi
     
     local ref="$(git_choose_existing_ref $target_folder $refs)"
@@ -262,8 +277,7 @@ git_update()
     
     local refs="$*"
     if [ ! -d "$target_folder" ] ; then
-        clone_url="$(remove_git_plus_from_url $clone_url)"
-        run_in . git clone "$clone_url" "$target_folder"
+        git_clone "$target_folder" "$clone_url"
     else
         if [ -n "$enable_fetch_while_update" ] ; then
             run_in $target_folder git fetch
