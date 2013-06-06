@@ -93,6 +93,10 @@
 #         svn: path-relative-to-baseurl
 #         mtn: selector (h:..., t:...)
 #
+#  branch - branch checked-out (or created) on demand during 
+#        checkout; ref is used as reference for created
+#        branch
+#         
 #  url  - a VCS specific URL of repository from which
 #         AVC shall checkout/and/or update workspace
 #         git: git+ssh://... , git://...
@@ -259,6 +263,27 @@ git_clone()
     run_in . git clone -n $git_clone_options "$clone_url" "$target_folder"
 }
 
+git_is_local_branch()
+{
+    local r="$(git ls-remote . refs/heads/$1)"
+    test -n "$r"
+}
+
+git_is_remote_branch()
+{
+    local remote_name="origin"
+    local r="$(git ls-remote . refs/remotes/$remote_name/$1)"
+    test -n "$r"
+}
+
+git_is_branch()
+{
+    local remote_name="origin"
+    local r="$(git ls-remote . refs/remotes/$remote_name/$1 refs/heads/$1)"
+    test -n "$r"
+}
+
+
 git_checkout()
 {
     local target_folder="$1"
@@ -284,13 +309,20 @@ git_checkout()
         echo "dews-avc: failed to checkout $target_folder; none following references exists in repo: $refs" >&2
         return 1
     fi
-    run_in "$target_folder" git checkout $ref
+    
+    local branch="$(chunk_prop "$avc_root_specfile" "$target_folder" branch)"
+    if [ -n "$branch" ] ; then
+        if run_in "$target_folder" git_is_branch $branch; then
+            run_in "$target_folder" git checkout $branch
+        else
+            run_in "$target_folder" git checkout -b $branch $ref
+        fi
+    else
+        run_in "$target_folder" git checkout $ref
+    fi
 }
 
-git_is_branch()
-{
-    git branch -a | grep -q "remotes/$1"
-}
+
 
 git_update()
 {
@@ -313,18 +345,20 @@ git_update()
         local ref="$(git_choose_existing_ref $clone_url $refs)"
     fi
     if [ -z "$ref" ] ; then
-        echo "dews-avc: failed to checkout $target_folder; none following references exists in repo: $refs" >&2
+        echo "dews-avc: failed to update $target_folder; none following references exists in repo: $refs" >&2
         return 1
     fi
     
-    if QUIET=1 run_in "$target_folder" git_is_branch origin/$ref ; then 
-        if ! run_in "$target_folder" git merge --ff origin/$ref ; then
-            echo "avc: $target_folder, unable to update/fast-forward from origin/$ref -> $ref; please merge or rebase manually"
-            return 1
+    local branch="$(chunk_prop "$avc_root_specfile" "$target_folder" branch)"
+    if [ -n "$branch" ] ; then
+        if run_in "$target_folder" git_is_branch $branch; then
+            run_in "$target_folder" git checkout $branch
+        else
+            run_in "$target_folder" git checkout -b $branch $ref
         fi
-    fi        
-    
-    run_in "$target_folder" git checkout $ref
+    else
+        run_in "$target_folder" git checkout $ref
+    fi
 }
 
 
