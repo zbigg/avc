@@ -20,6 +20,8 @@
 ##    autoinit - create initial configuration by digging current
 ##               folder
 ## options:
+##   -C DIR | --directory DIR
+##                      - switch to DIR before starting any operation
 ##   -n | --dry-run     - just print commands, don't execute anything
 ##   -h | --help | help - print this help message
 ##   -c FILE | --config-spec FILE 
@@ -1353,6 +1355,14 @@ while [ -n "$1" ] ; do
         force_config_spec="$2"
         shift
         shift
+    elif [ "$1" = "-C" -o "$1" = "--directory" ] ; then
+        if [ -z "$2" ] ; then
+            echo "avc: value needed for -C/--directory" >&2
+            exit 1
+        fi
+        change_directory="$2"
+        shift
+        shift
     elif [ "$1" = "-f" -o "$1" = "--fetch" -o "$1" = "--pull" ] ; then
         enable_fetch_while_update=1
         shift
@@ -1384,6 +1394,11 @@ set -f
 
 # reassign args as positional parameters
 set -- $args
+
+if [ -n "$change_directory" ] ; then
+    echo "avc: changing folder to '$change_directory' watch out for paths ;)" >&2
+    cd $change_directory
+fi
 
 case "$action" in
     help)
