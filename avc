@@ -1237,6 +1237,8 @@ checkout()
         local root_folder_exists=1
     fi
     mkdir -p $target_folder
+    cp "$avc_root_specfile" "$avc_root_specfile_name"
+    
     cd $target_folder
     for chunk in $chunks ; do
         local chunk_url="$(chunk_prop $avc_root_specfile $chunk url)"
@@ -1249,7 +1251,6 @@ checkout()
             update_url "$chunk" "$chunk_url" "$chunk_refs"
         fi
     done
-    cp "$avc_root_specfile" "$avc_root_specfile_name"
 }
 
 update()
