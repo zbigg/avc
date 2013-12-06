@@ -376,6 +376,7 @@ git_search_worskpaces()
         else
             echo "# $dir url <remote.origin.url_not_set>"    
         fi
+        echo "avc: found git workspace '$dir'" >&2
     done
 }
 
@@ -544,6 +545,8 @@ mtn_search_workspaces()
         else
             echo "# $dir url <remote.origin.url_not_set>"    
         fi
+        
+        echo "avc: found monotone workspace '$dir'" >&2
     done
 }
 
@@ -670,6 +673,8 @@ svn_find_workspaces()
             local url="$(run_in "$workspace_dir" svn info | awk '/^URL/ {printf $2; }')"
             echo "$workspace_dir ref HEAD"
             echo "$workspace_dir url $url"
+            
+            echo "avc: found svn workspace '$workspace_dir'" >&2
         fi
     done
 }
@@ -773,8 +778,8 @@ autoinit()
         svn_find_workspaces        
     ) | potentially_replace "$avc_root_specfile_name"
         
-    echo "found workspaces: "
-    chunks_all "$avc_root_specfile_name"
+    #echo "found workspaces: "
+    #chunks_all "$avc_root_specfile_name"
 }
 #
 # avc SCM multiplex
