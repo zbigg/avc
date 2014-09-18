@@ -224,7 +224,7 @@ git_choose_existing_ref()
     local refs="$*"
     
     local tmpfile=/tmp/.avc-git_choose_existing_ref-$USER-$$
-    git-ls-remote "$workspace" > $tmpfile
+    git ls-remote "$workspace" > $tmpfile
     local found_ref=""
     for ref in $refs ; do
         if egrep -q "refs/heads/$ref\$" $tmpfile ; then
@@ -1406,6 +1406,9 @@ if [ -n "$change_directory" ] ; then
 fi
 
 case "$action" in
+    checkout)
+        checkout "$*"
+        ;;
     help)
         usage
         ;;
